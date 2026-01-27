@@ -40,51 +40,53 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
     3: 'bg-blue-500'
   }
 
+  const isCompact = settings.view_mode === 'compact'
+
   return (
     <>
       <div className="flex items-center gap-4 flex-wrap">
         {/* アバター */}
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center overflow-hidden border-2 border-violet-400 shadow-lg shadow-violet-500/30">
+        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center overflow-hidden border-2 border-violet-400 shadow-lg shadow-violet-500/30 flex-shrink-0">
           {settings.avatar ? (
             <img src={settings.avatar} className="w-full h-full object-cover" alt="" />
           ) : (
-            <span className="text-3xl">📷</span>
+            <span className="text-2xl">📷</span>
           )}
         </div>
 
         {/* 吹き出し */}
-        <div className="flex-1 min-w-[200px] max-w-xl bg-slate-700/50 rounded-2xl p-4 relative">
-          <div className="absolute left-[-8px] top-6 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent border-r-slate-700/50"></div>
+        <div className="flex-1 min-w-[180px] max-w-md bg-slate-700/50 rounded-2xl p-3 relative">
+          <div className="absolute left-[-8px] top-5 w-0 h-0 border-t-8 border-b-8 border-r-8 border-transparent border-r-slate-700/50"></div>
           {topTask ? (
             <>
-              <div className="text-sm text-gray-400 mb-1">最重要タスクだよ！</div>
-              <div className="font-bold">{topTask.title}</div>
-              <div className="flex items-center gap-2 mt-2">
-                <span className={`${tierColors[topTask.tier || 2]} text-white text-xs px-2 py-0.5 rounded`}>
+              <div className="text-xs text-gray-400 mb-1">最重要タスクだよ！</div>
+              <div className="font-bold text-sm">{topTask.title}</div>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`${tierColors[topTask.tier || 2]} text-white text-xs px-1.5 py-0.5 rounded`}>
                   T{topTask.tier || 2}
                 </span>
                 {topTask.deadline && (
-                  <span className="text-red-400 text-sm">⚠️ {formatDate(topTask.deadline)}</span>
+                  <span className="text-red-400 text-xs">⚠️ {formatDate(topTask.deadline)}</span>
                 )}
                 {topTask.target_date && (
-                  <span className="text-pink-400 text-sm">🎯 {formatDate(topTask.target_date)}</span>
+                  <span className="text-pink-400 text-xs">🎯 {formatDate(topTask.target_date)}</span>
                 )}
               </div>
             </>
           ) : (
-            <div className="text-gray-400">タスクがないよ！ゆっくり休んでね 🎉</div>
+            <div className="text-gray-400 text-sm">タスクがないよ！ゆっくり休んでね 🎉</div>
           )}
         </div>
 
         {/* ステータス */}
         <div className="flex gap-2">
-          <div className="bg-slate-800 rounded-lg px-4 py-2 text-center min-w-[80px]">
+          <div className="bg-slate-800 rounded-lg px-3 py-1.5 text-center min-w-[60px]">
             <div className="text-xs text-gray-400">Active</div>
-            <div className="text-2xl font-bold">{activeCount}</div>
+            <div className="text-xl font-bold">{activeCount}</div>
           </div>
-          <div className="bg-slate-800 rounded-lg px-4 py-2 text-center min-w-[80px]">
+          <div className="bg-slate-800 rounded-lg px-3 py-1.5 text-center min-w-[60px]">
             <div className="text-xs text-gray-400">Wait</div>
-            <div className="text-2xl font-bold text-amber-400">{waitingCount}</div>
+            <div className="text-xl font-bold text-amber-400">{waitingCount}</div>
           </div>
         </div>
 
@@ -92,7 +94,7 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
         <select
           value={settings.sort_by}
           onChange={(e) => updateSettings({ sort_by: e.target.value })}
-          className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm"
+          className="bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-sm"
         >
           <option value="tier">Tier順</option>
           <option value="deadline">DEAD順</option>
@@ -100,10 +102,28 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
           <option value="manual">手動</option>
         </select>
 
+        {/* 表示切り替え */}
+        <div className="flex bg-slate-800 rounded-lg overflow-hidden border border-slate-600">
+          <button
+            onClick={() => updateSettings({ view_mode: 'normal' })}
+            className={`px-3 py-1.5 text-sm transition-all ${!isCompact ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            title="通常表示"
+          >
+            ≡
+          </button>
+          <button
+            onClick={() => updateSettings({ view_mode: 'compact' })}
+            className={`px-3 py-1.5 text-sm transition-all ${isCompact ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            title="コンパクト表示"
+          >
+            ☰
+          </button>
+        </div>
+
         {/* 追加ボタン */}
         <button
           onClick={onAddClick}
-          className="bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white px-6 py-2 rounded-lg font-bold transition-all"
+          className="bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 text-white px-4 py-1.5 rounded-lg font-bold transition-all text-sm"
         >
           ＋ 追加
         </button>
