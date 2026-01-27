@@ -9,8 +9,8 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from 
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 
 export default function Home() {
-  const [tasks, setTasks] = useState([])
-  const [settings, setSettings] = useState({ avatar: '', theme_color: 'violet', sort_by: 'tier' })
+  const [tasks, setTasks] = useState<any[]>([])
+  const [settings, setSettings] = useState<any>({ avatar: '', theme_color: 'violet', sort_by: 'tier' })
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(true)
 
