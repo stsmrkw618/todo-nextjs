@@ -1,0 +1,202 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
+import TaskCard from '@/components/TaskCard'
+import AddTaskModal from '@/components/AddTaskModal'
+import Header from '@/components/Header'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+
+export default function Home() {
+  const [tasks, setTasks] = useState([])
+  const [settings, setSettings] = useState({ avatar: '', theme_color: 'violet', sort_by: 'tier' })
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  )
+
+  // データ読み込み
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  const fetchData = async () => {
+    setLoading(true)
+    const [tasksRes, settingsRes] = await Promise.all([
+      supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
+      supabase.from('settings').select('*').eq('id', 1).single()
+    ])
+    if (tasksRes.data) setTasks(tasksRes.data)
+    if (settingsRes.data) setSettings(settingsRes.data)
+    setLoading(false)
+  }
+
+  // タスク追加
+  const addTask = async (task) => {
+    const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert([{ ...task, sort_order: maxOrder + 1 }])
+      .select()
+    if (data) setTasks([...tasks, data[0]])
+  }
+
+  // タスク更新
+  const updateTask = async (id, updates) => {
+    await supabase.from('tasks').update(updates).eq('id', id)
+    setTasks(tasks.map(t => t.id === id ? { ...t, ...updates } : t))
+  }
+
+  // タスク削除
+  const deleteTask = async (id) => {
+    await supabase.from('tasks').delete().eq('id', id)
+    setTasks(tasks.filter(t => t.id !== id))
+  }
+
+  // ドラッグ&ドロップ
+  const handleDragEnd = async (event) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = tasks.findIndex(t => t.id === active.id)
+    const newIndex = tasks.findIndex(t => t.id === over.id)
+    const newTasks = arrayMove(tasks, oldIndex, newIndex)
+
+    // sort_orderを更新
+    const updates = newTasks.map((task, index) => ({
+      id: task.id,
+      sort_order: index
+    }))
+
+    setTasks(newTasks)
+
+    // DB更新
+    for (const u of updates) {
+      await supabase.from('tasks').update({ sort_order: u.sort_order }).eq('id', u.id)
+    }
+  }
+
+  // タスクの分類
+  const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'waiting')
+  const waitingTasks = tasks.filter(t => t.status === 'waiting')
+  const doneTasks = tasks.filter(t => t.status === 'done')
+
+  // ソート
+  const sortTasks = (taskList) => {
+    return [...taskList].sort((a, b) => {
+      if (settings.sort_by === 'tier') return (a.tier || 2) - (b.tier || 2)
+      if (settings.sort_by === 'deadline') return (a.deadline || '9999') > (b.deadline || '9999') ? 1 : -1
+      if (settings.sort_by === 'target') return (a.target_date || '9999') > (b.target_date || '9999') ? 1 : -1
+      return (a.sort_order || 0) - (b.sort_order || 0)
+    })
+  }
+
+  const sortedActiveTasks = sortTasks(activeTasks)
+  const topTask = sortedActiveTasks[0]
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-screen">読み込み中...</div>
+  }
+
+  return (
+    <div className="min-h-screen p-4">
+      <Header
+        topTask={topTask}
+        activeCount={activeTasks.length}
+        waitingCount={waitingTasks.length}
+        settings={settings}
+        setSettings={setSettings}
+        onAddClick={() => setShowAddModal(true)}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+        {/* アクティブタスク */}
+        <div className="lg:col-span-2">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            アクティブ
+            <span className="bg-violet-500 text-white text-sm px-2 py-0.5 rounded-full">
+              {activeTasks.length}
+            </span>
+          </h2>
+
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={sortedActiveTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-3">
+                {sortedActiveTasks.map(task => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onUpdate={updateTask}
+                    onDelete={deleteTask}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+
+          {activeTasks.length === 0 && (
+            <div className="text-center py-12 text-gray-400">
+              ✨ アクティブなタスクはありません
+            </div>
+          )}
+        </div>
+
+        {/* 待ち & 完了 */}
+        <div>
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            👤 待ちタスク
+            <span className="bg-amber-500 text-white text-sm px-2 py-0.5 rounded-full">
+              {waitingTasks.length}
+            </span>
+          </h2>
+
+          <div className="space-y-2 mb-6">
+            {waitingTasks.map(task => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                compact
+                onUpdate={updateTask}
+                onDelete={deleteTask}
+              />
+            ))}
+            {waitingTasks.length === 0 && (
+              <div className="text-center py-8 text-gray-400 bg-slate-800/50 rounded-lg">
+                👍 待ちタスクなし
+              </div>
+            )}
+          </div>
+
+          {doneTasks.length > 0 && (
+            <>
+              <h2 className="text-lg font-bold mb-4 text-gray-400">
+                完了 ({doneTasks.length})
+              </h2>
+              <div className="space-y-2 opacity-60">
+                {doneTasks.slice(0, 5).map(task => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    compact
+                    onUpdate={updateTask}
+                    onDelete={deleteTask}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {showAddModal && (
+        <AddTaskModal
+          onAdd={addTask}
+          onClose={() => setShowAddModal(false)}
+        />
+      )}
+    </div>
+  )
+}
