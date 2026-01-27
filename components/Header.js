@@ -139,8 +139,8 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
 
       {/* 設定モーダル */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowSettings(false)}>
-          <div className="bg-slate-800 rounded-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-20 overflow-y-auto" onClick={() => setShowSettings(false)}>
+          <div className="bg-slate-800 rounded-xl p-6 w-full max-w-md my-8" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4">⚙️ 設定</h2>
             
             <div className="mb-4">
