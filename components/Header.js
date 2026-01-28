@@ -46,7 +46,7 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
     <>
       <div className="flex items-center gap-4 flex-wrap">
         {/* アバター */}
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center overflow-hidden border-2 border-violet-400 shadow-lg shadow-violet-500/30 flex-shrink-0">
+        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center overflow-hidden border-2 border-violet-400 shadow-lg shadow-violet-500/30 flex-shrink-0">
           {settings.avatar ? (
             <img src={settings.avatar} className="w-full h-full object-cover" alt="" />
           ) : (
