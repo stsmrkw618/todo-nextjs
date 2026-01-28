@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 
-export default function Header({ topTask, activeCount, waitingCount, settings, setSettings, onAddClick }) {
+export default function Header({ topTask, activeCount, waitingCount, settings, setSettings, onAddClick, user, onLogout }) {
   const [showSettings, setShowSettings] = useState(false)
   const fileInputRef = useRef(null)
 
@@ -16,7 +16,7 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
   const updateSettings = async (updates) => {
     const newSettings = { ...settings, ...updates }
     setSettings(newSettings)
-    await supabase.from('settings').update(updates).eq('id', 1)
+    await supabase.from('settings').update(updates).eq('user_id', user.id)
   }
 
   const handleFileChange = (e) => {
@@ -140,8 +140,14 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
       {/* 設定モーダル */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-20 overflow-y-auto" onClick={() => setShowSettings(false)}>
-          <div className="bg-slate-800 rounded-xl p-6 w-full max-w-md my-8" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-slate-800 rounded-xl p-6 w-full max-w-md mb-10" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4">⚙️ 設定</h2>
+
+            {/* ユーザー情報 */}
+            <div className="mb-4 p-3 bg-slate-700/50 rounded-lg">
+              <div className="text-sm text-gray-400 mb-1">ログイン中</div>
+              <div className="text-sm truncate">{user?.email}</div>
+            </div>
             
             <div className="mb-4">
               <label className="block text-sm text-gray-400 mb-2">🎭 アバター</label>
@@ -197,12 +203,20 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
               </select>
             </div>
 
-            <button
-              onClick={() => setShowSettings(false)}
-              className="w-full bg-slate-700 hover:bg-slate-600 py-2 rounded-lg"
-            >
-              閉じる
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 py-2 rounded-lg"
+              >
+                閉じる
+              </button>
+              <button
+                onClick={() => { setShowSettings(false); onLogout(); }}
+                className="bg-red-600/30 hover:bg-red-600/50 text-red-400 px-4 py-2 rounded-lg"
+              >
+                ログアウト
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -5,10 +5,13 @@ import { supabase } from '@/lib/supabase'
 import TaskCard from '@/components/TaskCard'
 import AddTaskModal from '@/components/AddTaskModal'
 import Header from '@/components/Header'
+import Auth from '@/components/Auth'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 
 export default function Home() {
+  const [user, setUser] = useState<any>(null)
+  const [authLoading, setAuthLoading] = useState(true)
   const [tasks, setTasks] = useState<any[]>([])
   const [settings, setSettings] = useState<any>({ avatar: '', theme_color: 'violet', sort_by: 'tier', view_mode: 'normal' })
   const [showAddModal, setShowAddModal] = useState(false)
@@ -18,12 +21,32 @@ export default function Home() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   )
 
-  // データ読み込み
+  // 認証状態の監視
   useEffect(() => {
-    fetchData()
+    // 現在のセッションを取得
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setAuthLoading(false)
+    })
+
+    // 認証状態の変化を監視
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
+  // データ読み込み
+  useEffect(() => {
+    if (user) {
+      fetchData()
+    }
+  }, [user])
+
   const fetchData = async () => {
+    if (!user) return
+    
     setLoading(true)
     
     // 1週間以上前に完了したタスクを削除
@@ -32,24 +55,44 @@ export default function Home() {
     await supabase
       .from('tasks')
       .delete()
+      .eq('user_id', user.id)
       .eq('status', 'done')
       .lt('completed_at', oneWeekAgo.toISOString())
     
     const [tasksRes, settingsRes] = await Promise.all([
-      supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
-      supabase.from('settings').select('*').eq('id', 1).single()
+      supabase.from('tasks').select('*').eq('user_id', user.id).order('sort_order', { ascending: true }),
+      supabase.from('settings').select('*').eq('user_id', user.id).single()
     ])
+    
     if (tasksRes.data) setTasks(tasksRes.data)
-    if (settingsRes.data) setSettings(settingsRes.data)
+    
+    if (settingsRes.data) {
+      setSettings(settingsRes.data)
+    } else {
+      // 初回ログイン時に設定を作成
+      const { data } = await supabase
+        .from('settings')
+        .insert([{ user_id: user.id, avatar: '', theme_color: 'violet', sort_by: 'tier', view_mode: 'normal' }])
+        .select()
+        .single()
+      if (data) setSettings(data)
+    }
+    
     setLoading(false)
+  }
+
+  // ログアウト
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
   }
 
   // タスク追加
   const addTask = async (task: any) => {
+    if (!user) return
     const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0
     const { data, error } = await supabase
       .from('tasks')
-      .insert([{ ...task, sort_order: maxOrder + 1 }])
+      .insert([{ ...task, user_id: user.id, sort_order: maxOrder + 1 }])
       .select()
     if (data) setTasks([...tasks, data[0]])
   }
@@ -78,6 +121,7 @@ export default function Home() {
 
   // タスク分割
   const splitTask = async (originalTask: any, childTitles: string[]) => {
+    if (!user) return
     const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0
     
     // 子タスクを作成
@@ -89,7 +133,8 @@ export default function Home() {
       deadline: originalTask.deadline,
       target_date: originalTask.target_date,
       waiting_for: '',
-      sort_order: maxOrder + index + 1
+      sort_order: maxOrder + index + 1,
+      user_id: user.id
     }))
     
     const { data, error } = await supabase
@@ -128,6 +173,16 @@ export default function Home() {
     }
   }
 
+  // 認証ロード中
+  if (authLoading) {
+    return <div className="flex items-center justify-center h-screen">読み込み中...</div>
+  }
+
+  // 未ログイン
+  if (!user) {
+    return <Auth />
+  }
+
   // タスクの分類
   const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'waiting')
   const waitingTasks = tasks.filter(t => t.status === 'waiting')
@@ -163,6 +218,8 @@ export default function Home() {
           settings={settings}
           setSettings={setSettings}
           onAddClick={() => setShowAddModal(true)}
+          user={user}
+          onLogout={handleLogout}
         />
       </div>
 
