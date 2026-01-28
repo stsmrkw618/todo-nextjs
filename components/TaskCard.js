@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-export default function TaskCard({ task, compact, onUpdate, onDelete }) {
+export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit }) {
   const [showEdit, setShowEdit] = useState(false)
+  const [showSplit, setShowSplit] = useState(false)
   const [editData, setEditData] = useState(task)
 
   const {
@@ -172,7 +173,10 @@ export default function TaskCard({ task, compact, onUpdate, onDelete }) {
         </div>
 
         {/* 編集モーダル */}
-        {showEdit && <EditModal task={task} editData={editData} setEditData={setEditData} handleSave={handleSave} onDelete={onDelete} setShowEdit={setShowEdit} statusOptions={statusOptions} />}
+        {showEdit && <EditModal task={task} editData={editData} setEditData={setEditData} handleSave={handleSave} onDelete={onDelete} setShowEdit={setShowEdit} setShowSplit={setShowSplit} statusOptions={statusOptions} />}
+        
+        {/* 分割モーダル */}
+        {showSplit && <SplitModal task={task} onSplit={onSplit} setShowSplit={setShowSplit} />}
       </>
     )
   }
@@ -246,16 +250,19 @@ export default function TaskCard({ task, compact, onUpdate, onDelete }) {
       </div>
 
       {/* 編集モーダル */}
-      {showEdit && <EditModal task={task} editData={editData} setEditData={setEditData} handleSave={handleSave} onDelete={onDelete} setShowEdit={setShowEdit} statusOptions={statusOptions} />}
+      {showEdit && <EditModal task={task} editData={editData} setEditData={setEditData} handleSave={handleSave} onDelete={onDelete} setShowEdit={setShowEdit} setShowSplit={setShowSplit} statusOptions={statusOptions} />}
+      
+      {/* 分割モーダル */}
+      {showSplit && <SplitModal task={task} onSplit={onSplit} setShowSplit={setShowSplit} />}
     </>
   )
 }
 
 // 編集モーダルコンポーネント
-function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowEdit, statusOptions }) {
+function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowEdit, setShowSplit, statusOptions }) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowEdit(false)}>
-      <div className="bg-slate-800 rounded-xl p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-20 overflow-y-auto" onClick={() => setShowEdit(false)}>
+      <div className="bg-slate-800 rounded-xl p-6 w-full max-w-lg mb-10" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-xl font-bold mb-4">タスクを編集</h2>
 
         <div className="space-y-4">
@@ -335,6 +342,13 @@ function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowE
             保存
           </button>
           <button
+            onClick={() => { setShowEdit(false); setShowSplit(true); }}
+            className="bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 px-4 py-2 rounded-lg"
+            title="タスクを分割"
+          >
+            ✂️ 分割
+          </button>
+          <button
             onClick={() => { onDelete(task.id); setShowEdit(false); }}
             className="bg-red-600/30 hover:bg-red-600/50 px-4 py-2 rounded-lg"
           >
@@ -343,6 +357,100 @@ function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowE
           <button
             onClick={() => setShowEdit(false)}
             className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 分割モーダルコンポーネント
+function SplitModal({ task, onSplit, setShowSplit }) {
+  const [childTasks, setChildTasks] = useState(['', ''])
+
+  const addChildTask = () => {
+    setChildTasks([...childTasks, ''])
+  }
+
+  const updateChildTask = (index, value) => {
+    const newTasks = [...childTasks]
+    newTasks[index] = value
+    setChildTasks(newTasks)
+  }
+
+  const removeChildTask = (index) => {
+    if (childTasks.length > 2) {
+      setChildTasks(childTasks.filter((_, i) => i !== index))
+    }
+  }
+
+  const handleSplit = () => {
+    const validTitles = childTasks.filter(t => t.trim() !== '')
+    if (validTitles.length >= 2) {
+      onSplit(task, validTitles)
+      setShowSplit(false)
+    }
+  }
+
+  const canSplit = childTasks.filter(t => t.trim() !== '').length >= 2
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-20 overflow-y-auto" onClick={() => setShowSplit(false)}>
+      <div className="bg-slate-800 rounded-xl p-6 w-full max-w-lg mb-10" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-xl font-bold mb-4">✂️ タスクを分割</h2>
+        
+        <div className="bg-slate-700/50 rounded-lg p-3 mb-4">
+          <div className="text-sm text-gray-400 mb-1">元タスク</div>
+          <div className="font-bold">{task.title}</div>
+        </div>
+
+        <div className="space-y-3 mb-4">
+          <label className="block text-sm text-gray-400">子タスク（2つ以上）</label>
+          {childTasks.map((title, index) => (
+            <div key={index} className="flex gap-2">
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => updateChildTask(index, e.target.value)}
+                placeholder={`子タスク ${index + 1}`}
+                className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2"
+                autoFocus={index === 0}
+              />
+              {childTasks.length > 2 && (
+                <button
+                  onClick={() => removeChildTask(index)}
+                  className="bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded-lg"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            onClick={addChildTask}
+            className="w-full bg-slate-700 hover:bg-slate-600 border border-slate-600 border-dashed rounded-lg px-3 py-2 text-sm text-gray-400"
+          >
+            ＋ 子タスクを追加
+          </button>
+        </div>
+
+        <div className="text-xs text-gray-400 mb-4">
+          ※ Tier、DEADLINE、目標日は子タスクに引き継がれます
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={handleSplit}
+            disabled={!canSplit}
+            className={`flex-1 py-2 rounded-lg font-bold ${canSplit ? 'bg-blue-600 hover:bg-blue-700' : 'bg-slate-600 text-gray-400 cursor-not-allowed'}`}
+          >
+            分割して作成
+          </button>
+          <button
+            onClick={() => setShowSplit(false)}
+            className="bg-slate-700 hover:bg-slate-600 px-6 py-2 rounded-lg"
           >
             キャンセル
           </button>

@@ -25,6 +25,16 @@ export default function Home() {
 
   const fetchData = async () => {
     setLoading(true)
+    
+    // 1週間以上前に完了したタスクを削除
+    const oneWeekAgo = new Date()
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
+    await supabase
+      .from('tasks')
+      .delete()
+      .eq('status', 'done')
+      .lt('completed_at', oneWeekAgo.toISOString())
+    
     const [tasksRes, settingsRes] = await Promise.all([
       supabase.from('tasks').select('*').order('sort_order', { ascending: true }),
       supabase.from('settings').select('*').eq('id', 1).single()
@@ -46,6 +56,16 @@ export default function Home() {
 
   // タスク更新
   const updateTask = async (id: number, updates: any) => {
+    // 完了にする場合は completed_at を記録
+    if (updates.status === 'done') {
+      updates.completed_at = new Date().toISOString()
+    }
+    // 完了から別のステータスに戻す場合は completed_at をクリア
+    const currentTask = tasks.find(t => t.id === id)
+    if (currentTask?.status === 'done' && updates.status && updates.status !== 'done') {
+      updates.completed_at = null
+    }
+    
     await supabase.from('tasks').update(updates).eq('id', id)
     setTasks(tasks.map(t => t.id === id ? { ...t, ...updates } : t))
   }
@@ -54,6 +74,35 @@ export default function Home() {
   const deleteTask = async (id: number) => {
     await supabase.from('tasks').delete().eq('id', id)
     setTasks(tasks.filter(t => t.id !== id))
+  }
+
+  // タスク分割
+  const splitTask = async (originalTask: any, childTitles: string[]) => {
+    const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0
+    
+    // 子タスクを作成
+    const childTasks = childTitles.map((title, index) => ({
+      title,
+      description: '',
+      tier: originalTask.tier,
+      status: 'todo',
+      deadline: originalTask.deadline,
+      target_date: originalTask.target_date,
+      waiting_for: '',
+      sort_order: maxOrder + index + 1
+    }))
+    
+    const { data, error } = await supabase
+      .from('tasks')
+      .insert(childTasks)
+      .select()
+    
+    if (data) {
+      // 元タスクを削除
+      await supabase.from('tasks').delete().eq('id', originalTask.id)
+      // ステートを更新
+      setTasks([...tasks.filter(t => t.id !== originalTask.id), ...data])
+    }
   }
 
   // ドラッグ&ドロップ
@@ -139,6 +188,7 @@ export default function Home() {
                       compact={isCompact}
                       onUpdate={updateTask}
                       onDelete={deleteTask}
+                      onSplit={splitTask}
                     />
                   ))}
                 </div>
@@ -169,6 +219,7 @@ export default function Home() {
                   compact={true}
                   onUpdate={updateTask}
                   onDelete={deleteTask}
+                  onSplit={splitTask}
                 />
               ))}
               {waitingTasks.length === 0 && (
@@ -191,6 +242,7 @@ export default function Home() {
                       compact={true}
                       onUpdate={updateTask}
                       onDelete={deleteTask}
+                      onSplit={splitTask}
                     />
                   ))}
                 </div>
