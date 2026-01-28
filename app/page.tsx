@@ -118,7 +118,7 @@ export default function Home() {
       </div>
 
       {/* メインコンテンツ（ヘッダー分の余白を確保） */}
-      <div className="pt-48 sm:pt-36 lg:pt-32 p-4">
+      <div className="pt-56 sm:pt-40 lg:pt-32 p-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* アクティブタスク */}
           <div className="lg:col-span-2">
