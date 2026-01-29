@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import TaskCard from '@/components/TaskCard'
 import AddTaskModal from '@/components/AddTaskModal'
 import Header from '@/components/Header'
+import MatrixView from '@/components/MatrixView'
 import Auth from '@/components/Auth'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
@@ -16,6 +17,7 @@ export default function Home() {
   const [settings, setSettings] = useState<any>({ avatar: '', theme_color: 'violet', sort_by: 'tier', view_mode: 'normal' })
   const [showAddModal, setShowAddModal] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [showAllCompleted, setShowAllCompleted] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
@@ -23,13 +25,11 @@ export default function Home() {
 
   // 認証状態の監視
   useEffect(() => {
-    // 現在のセッションを取得
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       setAuthLoading(false)
     })
 
-    // 認証状態の変化を監視
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
@@ -69,7 +69,6 @@ export default function Home() {
     if (settingsRes.data) {
       setSettings(settingsRes.data)
     } else {
-      // 初回ログイン時に設定を作成
       const { data } = await supabase
         .from('settings')
         .insert([{ user_id: user.id, avatar: '', theme_color: 'violet', sort_by: 'tier', view_mode: 'normal' }])
@@ -99,14 +98,17 @@ export default function Home() {
 
   // タスク更新
   const updateTask = async (id: number, updates: any) => {
-    // 完了にする場合は completed_at を記録
     if (updates.status === 'done') {
       updates.completed_at = new Date().toISOString()
     }
-    // 完了から別のステータスに戻す場合は completed_at をクリア
     const currentTask = tasks.find(t => t.id === id)
     if (currentTask?.status === 'done' && updates.status && updates.status !== 'done') {
       updates.completed_at = null
+    }
+    // 待ち以外に変更した場合、待ち関連フィールドをクリア
+    if (updates.status && updates.status !== 'waiting') {
+      updates.waiting_for = null
+      updates.waiting_deadline = null
     }
     
     await supabase.from('tasks').update(updates).eq('id', id)
@@ -124,7 +126,6 @@ export default function Home() {
     if (!user) return
     const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0
     
-    // 子タスクを作成
     const childTasks = childTitles.map((title, index) => ({
       title,
       description: '',
@@ -143,9 +144,7 @@ export default function Home() {
       .select()
     
     if (data) {
-      // 元タスクを削除
       await supabase.from('tasks').delete().eq('id', originalTask.id)
-      // ステートを更新
       setTasks([...tasks.filter(t => t.id !== originalTask.id), ...data])
     }
   }
@@ -159,7 +158,6 @@ export default function Home() {
     const newIndex = tasks.findIndex(t => t.id === over.id)
     const newTasks = arrayMove(tasks, oldIndex, newIndex)
 
-    // sort_orderを更新
     const updates = newTasks.map((task, index) => ({
       id: task.id,
       sort_order: index
@@ -167,7 +165,6 @@ export default function Home() {
 
     setTasks(newTasks)
 
-    // DB更新
     for (const u of updates) {
       await supabase.from('tasks').update({ sort_order: u.sort_order }).eq('id', u.id)
     }
@@ -188,6 +185,13 @@ export default function Home() {
   const waitingTasks = tasks.filter(t => t.status === 'waiting')
   const doneTasks = tasks.filter(t => t.status === 'done')
 
+  // 完了タスクを新しい順にソート
+  const sortedDoneTasks = [...doneTasks].sort((a, b) => {
+    const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0
+    const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0
+    return dateB - dateA
+  })
+
   // ソート
   const sortTasks = (taskList: any[]) => {
     return [...taskList].sort((a, b) => {
@@ -202,6 +206,7 @@ export default function Home() {
   const topTask = sortedActiveTasks[0]
 
   const isCompact = settings.view_mode === 'compact'
+  const isMatrix = settings.view_mode === 'matrix'
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen">読み込み中...</div>
@@ -223,90 +228,113 @@ export default function Home() {
         />
       </div>
 
-      {/* メインコンテンツ（ヘッダー分の余白を確保） */}
+      {/* メインコンテンツ */}
       <div className="pt-56 sm:pt-40 lg:pt-32 p-4">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* アクティブタスク */}
-          <div className="lg:col-span-2">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              アクティブ
-              <span className="bg-violet-500 text-white text-sm px-2 py-0.5 rounded-full">
-                {activeTasks.length}
-              </span>
-            </h2>
+        {isMatrix ? (
+          // マトリクス表示
+          <MatrixView
+            tasks={activeTasks}
+            onUpdate={updateTask}
+            onDelete={deleteTask}
+            onSplit={splitTask}
+          />
+        ) : (
+          // リスト表示（通常/コンパクト）
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* アクティブタスク */}
+            <div className="lg:col-span-2">
+              <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                アクティブ
+                <span className="bg-violet-500 text-white text-sm px-2 py-0.5 rounded-full">
+                  {activeTasks.length}
+                </span>
+              </h2>
 
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={sortedActiveTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-                <div className={isCompact ? "space-y-1" : "space-y-3"}>
-                  {sortedActiveTasks.map(task => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      compact={isCompact}
-                      onUpdate={updateTask}
-                      onDelete={deleteTask}
-                      onSplit={splitTask}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={sortedActiveTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                  <div className={isCompact ? "space-y-1" : "space-y-3"}>
+                    {sortedActiveTasks.map(task => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        compact={isCompact}
+                        onUpdate={updateTask}
+                        onDelete={deleteTask}
+                        onSplit={splitTask}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
 
-            {activeTasks.length === 0 && (
-              <div className="text-center py-12 text-gray-400">
-                ✨ アクティブなタスクはありません
-              </div>
-            )}
-          </div>
-
-          {/* 待ち & 完了 */}
-          <div>
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              👤 待ちタスク
-              <span className="bg-amber-500 text-white text-sm px-2 py-0.5 rounded-full">
-                {waitingTasks.length}
-              </span>
-            </h2>
-
-            <div className="space-y-2 mb-6">
-              {waitingTasks.map(task => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  compact={true}
-                  onUpdate={updateTask}
-                  onDelete={deleteTask}
-                  onSplit={splitTask}
-                />
-              ))}
-              {waitingTasks.length === 0 && (
-                <div className="text-center py-8 text-gray-400 bg-slate-800/50 rounded-lg">
-                  👍 待ちタスクなし
+              {activeTasks.length === 0 && (
+                <div className="text-center py-12 text-gray-400">
+                  ✨ アクティブなタスクはありません
                 </div>
               )}
             </div>
 
-            {doneTasks.length > 0 && (
-              <>
-                <h2 className="text-lg font-bold mb-4 text-gray-400">
-                  完了 ({doneTasks.length})
-                </h2>
-                <div className="space-y-2 opacity-60">
-                  {doneTasks.slice(0, 5).map(task => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      compact={true}
-                      onUpdate={updateTask}
-                      onDelete={deleteTask}
-                      onSplit={splitTask}
-                    />
-                  ))}
-                </div>
-              </>
-            )}
+            {/* 待ち & 完了 */}
+            <div>
+              <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                👤 待ちタスク
+                <span className="bg-amber-500 text-white text-sm px-2 py-0.5 rounded-full">
+                  {waitingTasks.length}
+                </span>
+              </h2>
+
+              <div className="space-y-2 mb-6">
+                {waitingTasks.map(task => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    compact={true}
+                    onUpdate={updateTask}
+                    onDelete={deleteTask}
+                    onSplit={splitTask}
+                    showWaitingDetails={true}
+                  />
+                ))}
+                {waitingTasks.length === 0 && (
+                  <div className="text-center py-8 text-gray-400 bg-slate-800/50 rounded-lg">
+                    👍 待ちタスクなし
+                  </div>
+                )}
+              </div>
+
+              {sortedDoneTasks.length > 0 && (
+                <>
+                  <h2 className="text-lg font-bold mb-4 text-gray-400">
+                    完了 ({sortedDoneTasks.length})
+                  </h2>
+                  <div className="space-y-2 opacity-60">
+                    {(showAllCompleted ? sortedDoneTasks : sortedDoneTasks.slice(0, 5)).map(task => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        compact={true}
+                        onUpdate={updateTask}
+                        onDelete={deleteTask}
+                        onSplit={splitTask}
+                        showRestoreButton={true}
+                      />
+                    ))}
+                  </div>
+                  {sortedDoneTasks.length > 5 && (
+                    <button
+                      onClick={() => setShowAllCompleted(!showAllCompleted)}
+                      className="w-full mt-2 py-2 text-sm text-gray-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 rounded-lg transition-all"
+                    >
+                      {showAllCompleted 
+                        ? '▲ 折りたたむ' 
+                        : `▼ もっと見る（残り${sortedDoneTasks.length - 5}件）`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {showAddModal && (

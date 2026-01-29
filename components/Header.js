@@ -40,7 +40,7 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
     3: 'bg-blue-500'
   }
 
-  const isCompact = settings.view_mode === 'compact'
+  const viewMode = settings.view_mode || 'normal'
 
   return (
     <>
@@ -106,17 +106,24 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
         <div className="flex bg-slate-800 rounded-lg overflow-hidden border border-slate-600">
           <button
             onClick={() => updateSettings({ view_mode: 'normal' })}
-            className={`px-3 py-1.5 text-sm transition-all ${!isCompact ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`px-3 py-1.5 text-sm transition-all ${viewMode === 'normal' ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'}`}
             title="通常表示"
           >
             ≡
           </button>
           <button
             onClick={() => updateSettings({ view_mode: 'compact' })}
-            className={`px-3 py-1.5 text-sm transition-all ${isCompact ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`px-3 py-1.5 text-sm transition-all ${viewMode === 'compact' ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'}`}
             title="コンパクト表示"
           >
             ☰
+          </button>
+          <button
+            onClick={() => updateSettings({ view_mode: 'matrix' })}
+            className={`px-3 py-1.5 text-sm transition-all ${viewMode === 'matrix' ? 'bg-violet-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            title="マトリクス表示"
+          >
+            ⊞
           </button>
         </div>
 
@@ -152,7 +159,6 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
             <div className="mb-4">
               <label className="block text-sm text-gray-400 mb-2">🎭 アバター</label>
               
-              {/* プレビュー */}
               <div className="flex items-center gap-4 mb-3">
                 <div className="w-16 h-16 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center overflow-hidden border-2 border-violet-400">
                   {settings.avatar ? (
@@ -172,7 +178,6 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
                 )}
               </div>
               
-              {/* ファイル選択 */}
               <input
                 type="file"
                 ref={fileInputRef}

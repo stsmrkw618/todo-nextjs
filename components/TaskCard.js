@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit }) {
+export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, showWaitingDetails, showRestoreButton }) {
   const [showEdit, setShowEdit] = useState(false)
   const [showSplit, setShowSplit] = useState(false)
   const [editData, setEditData] = useState(task)
@@ -59,13 +59,19 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit })
     return new Date(dateStr) < new Date()
   }
 
+  const getDaysOverdue = (dateStr) => {
+    if (!dateStr) return 0
+    const diff = new Date() - new Date(dateStr)
+    return Math.floor(diff / (1000 * 60 * 60 * 24))
+  }
+
   const handleSave = () => {
     onUpdate(task.id, editData)
     setShowEdit(false)
   }
 
-  // 待ちタスク・完了タスク用のコンパクト表示（ドラッグなし）
-  if (task.status === 'waiting' || task.status === 'done') {
+  // 完了タスクの表示
+  if (task.status === 'done') {
     return (
       <div className={`bg-slate-800 rounded-lg p-3 border-l-4 ${tierColors[task.tier || 2]}`}>
         <div className="flex items-center justify-between">
@@ -73,35 +79,102 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit })
             <span className={`${tierBadgeColors[task.tier || 2]} text-white text-xs px-1.5 py-0.5 rounded flex-shrink-0`}>
               T{task.tier || 2}
             </span>
-            <span className={`truncate ${task.status === 'done' ? 'line-through text-gray-400' : ''}`}>
+            <span className="truncate line-through text-gray-400">
               {task.title}
             </span>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0 ml-2">
-            {task.status === 'waiting' && (
+            {showRestoreButton && (
               <button
                 onClick={() => onUpdate(task.id, { status: 'todo' })}
                 className="text-sm bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded"
+                title="未着手に戻す"
               >
                 ↩️
               </button>
             )}
-            {task.status === 'done' && (
-              <button
-                onClick={() => onDelete(task.id)}
-                className="text-sm bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded"
-              >
-                🗑️
-              </button>
-            )}
+            <button
+              onClick={() => onDelete(task.id)}
+              className="text-sm bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded"
+            >
+              🗑️
+            </button>
           </div>
         </div>
-        {task.deadline && (
-          <div className={`text-xs mt-1 ${isOverdue(task.deadline) ? 'text-red-400' : 'text-gray-400'}`}>
-            ⚠️ DEAD: {formatDate(task.deadline)}
-          </div>
-        )}
       </div>
+    )
+  }
+
+  // 待ちタスクの表示
+  if (task.status === 'waiting') {
+    const waitingOverdue = isOverdue(task.waiting_deadline)
+    const daysOver = getDaysOverdue(task.waiting_deadline)
+
+    return (
+      <>
+        <div className={`bg-slate-800 rounded-lg p-3 border-l-4 ${tierColors[task.tier || 2]} ${waitingOverdue ? 'ring-1 ring-red-500/50' : ''}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <span className={`${tierBadgeColors[task.tier || 2]} text-white text-xs px-1.5 py-0.5 rounded flex-shrink-0`}>
+                T{task.tier || 2}
+              </span>
+              <span className="truncate">{task.title}</span>
+              {waitingOverdue && <span className="text-red-400 flex-shrink-0">🔴</span>}
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+              <button
+                onClick={() => setShowEdit(true)}
+                className="text-sm bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded"
+              >
+                ✏️
+              </button>
+              <button
+                onClick={() => onUpdate(task.id, { status: 'todo' })}
+                className="text-sm bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded"
+                title="未着手に戻す"
+              >
+                ↩️
+              </button>
+            </div>
+          </div>
+          
+          {showWaitingDetails && (
+            <div className="mt-2 text-xs space-y-1">
+              {task.waiting_for && (
+                <div className="text-gray-400">
+                  👤 {task.waiting_for}
+                </div>
+              )}
+              {task.waiting_deadline && (
+                <div className={waitingOverdue ? 'text-red-400' : 'text-gray-400'}>
+                  📅 返事期限: {formatDate(task.waiting_deadline)}
+                  {waitingOverdue && ` （${daysOver}日超過）催促が必要`}
+                </div>
+              )}
+              {task.deadline && (
+                <div className={`${isOverdue(task.deadline) ? 'text-red-400' : 'text-yellow-400'}`}>
+                  ⚠️ DEAD: {formatDate(task.deadline)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {showEdit && (
+          <EditModal
+            task={task}
+            editData={editData}
+            setEditData={setEditData}
+            handleSave={handleSave}
+            onDelete={onDelete}
+            setShowEdit={setShowEdit}
+            setShowSplit={setShowSplit}
+            statusOptions={statusOptions}
+          />
+        )}
+        
+        {showSplit && <SplitModal task={task} onSplit={onSplit} setShowSplit={setShowSplit} />}
+      </>
     )
   }
 
@@ -117,15 +190,12 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit })
           {...listeners}
         >
           <div className="flex items-center gap-2">
-            {/* Tier */}
             <span className={`${tierBadgeColors[task.tier || 2]} text-white text-xs px-1.5 py-0.5 rounded flex-shrink-0`}>
               T{task.tier || 2}
             </span>
             
-            {/* タイトル */}
             <span className="font-medium flex-1 truncate">{task.title}</span>
             
-            {/* 日付 */}
             <div className="flex items-center gap-2 text-xs flex-shrink-0">
               {task.deadline && (
                 <span className={isOverdue(task.deadline) ? 'text-red-400' : 'text-yellow-400'}>
@@ -139,7 +209,6 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit })
               )}
             </div>
             
-            {/* ステータス */}
             <select
               value={task.status}
               onChange={(e) => { e.stopPropagation(); onUpdate(task.id, { status: e.target.value }); }}
@@ -152,7 +221,6 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit })
               ))}
             </select>
             
-            {/* 編集 */}
             <button
               onClick={(e) => { e.stopPropagation(); setShowEdit(true); }}
               onPointerDown={(e) => e.stopPropagation()}
@@ -161,7 +229,6 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit })
               ✏️
             </button>
             
-            {/* 完了 */}
             <button
               onClick={(e) => { e.stopPropagation(); onUpdate(task.id, { status: 'done' }); }}
               onPointerDown={(e) => e.stopPropagation()}
@@ -172,10 +239,7 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit })
           </div>
         </div>
 
-        {/* 編集モーダル */}
         {showEdit && <EditModal task={task} editData={editData} setEditData={setEditData} handleSave={handleSave} onDelete={onDelete} setShowEdit={setShowEdit} setShowSplit={setShowSplit} statusOptions={statusOptions} />}
-        
-        {/* 分割モーダル */}
         {showSplit && <SplitModal task={task} onSplit={onSplit} setShowSplit={setShowSplit} />}
       </>
     )
@@ -249,17 +313,16 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit })
         </div>
       </div>
 
-      {/* 編集モーダル */}
       {showEdit && <EditModal task={task} editData={editData} setEditData={setEditData} handleSave={handleSave} onDelete={onDelete} setShowEdit={setShowEdit} setShowSplit={setShowSplit} statusOptions={statusOptions} />}
-      
-      {/* 分割モーダル */}
       {showSplit && <SplitModal task={task} onSplit={onSplit} setShowSplit={setShowSplit} />}
     </>
   )
 }
 
-// 編集モーダルコンポーネント
+// 編集モーダル
 function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowEdit, setShowSplit, statusOptions }) {
+  const isWaiting = editData.status === 'waiting'
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-20 overflow-y-auto" onClick={() => setShowEdit(false)}>
       <div className="bg-slate-800 rounded-xl p-6 w-full max-w-lg mb-10" onClick={(e) => e.stopPropagation()}>
@@ -312,6 +375,34 @@ function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowE
             </div>
           </div>
 
+          {/* 待ち状態の追加項目 */}
+          {isWaiting && (
+            <div className="border border-amber-500/30 rounded-lg p-4 bg-amber-500/5">
+              <div className="text-sm text-amber-400 mb-3">👤 待ち状態の詳細</div>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">誰を待っている？</label>
+                  <input
+                    type="text"
+                    value={editData.waiting_for || ''}
+                    onChange={(e) => setEditData({ ...editData, waiting_for: e.target.value })}
+                    placeholder="例: クライアント田中さん"
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">いつまでに返事が必要？</label>
+                  <input
+                    type="date"
+                    value={editData.waiting_deadline || ''}
+                    onChange={(e) => setEditData({ ...editData, waiting_deadline: e.target.value })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-400 mb-1">DEADLINE</label>
@@ -346,13 +437,13 @@ function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowE
             className="bg-blue-600/30 hover:bg-blue-600/50 border border-blue-500/50 px-4 py-2 rounded-lg"
             title="タスクを分割"
           >
-            ✂️ 分割
+            ✂️
           </button>
           <button
             onClick={() => { onDelete(task.id); setShowEdit(false); }}
             className="bg-red-600/30 hover:bg-red-600/50 px-4 py-2 rounded-lg"
           >
-            削除
+            🗑️
           </button>
           <button
             onClick={() => setShowEdit(false)}
@@ -366,7 +457,7 @@ function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowE
   )
 }
 
-// 分割モーダルコンポーネント
+// 分割モーダル
 function SplitModal({ task, onSplit, setShowSplit }) {
   const [childTasks, setChildTasks] = useState(['', ''])
 
