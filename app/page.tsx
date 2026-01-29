@@ -283,16 +283,16 @@ export default function Home() {
                 </span>
               </h2>
 
-              <div className="space-y-2 mb-6">
+              <div className={isCompact ? "space-y-1 mb-6" : "space-y-2 mb-6"}>
                 {waitingTasks.map(task => (
                   <TaskCard
                     key={task.id}
                     task={task}
-                    compact={true}
+                    compact={isCompact}
                     onUpdate={updateTask}
                     onDelete={deleteTask}
                     onSplit={splitTask}
-                    showWaitingDetails={true}
+                    showWaitingDetails={!isCompact}
                   />
                 ))}
                 {waitingTasks.length === 0 && (
@@ -307,7 +307,7 @@ export default function Home() {
                   <h2 className="text-lg font-bold mb-4 text-gray-400">
                     完了 ({sortedDoneTasks.length})
                   </h2>
-                  <div className="space-y-2 opacity-60">
+                  <div className={isCompact ? "space-y-1 opacity-60" : "space-y-2 opacity-60"}>
                     {(showAllCompleted ? sortedDoneTasks : sortedDoneTasks.slice(0, 5)).map(task => (
                       <TaskCard
                         key={task.id}
