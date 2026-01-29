@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
-export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, showWaitingDetails, showRestoreButton }) {
+export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, showWaitingDetails, showRestoreButton, draggable }) {
   const [showEdit, setShowEdit] = useState(false)
   const [showSplit, setShowSplit] = useState(false)
   const [editData, setEditData] = useState(task)
@@ -16,7 +16,7 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id })
+  } = useSortable({ id: task.id, disabled: !draggable })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -110,9 +110,73 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
     const waitingOverdue = isOverdue(task.waiting_deadline)
     const daysOver = getDaysOverdue(task.waiting_deadline)
 
+    // コンパクト表示
+    if (compact) {
+      return (
+        <>
+          <div
+            ref={setNodeRef}
+            style={style}
+            className={`bg-slate-800 rounded-lg px-3 py-2 border-l-4 ${tierColors[task.tier || 2]} ${waitingOverdue ? 'ring-1 ring-red-500/50' : ''} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+            {...attributes}
+            {...listeners}
+          >
+            <div className="flex items-center gap-2">
+              <span className={`${tierBadgeColors[task.tier || 2]} text-white text-xs px-1.5 py-0.5 rounded flex-shrink-0`}>
+                T{task.tier || 2}
+              </span>
+              <span className="font-medium flex-1 truncate">{task.title}</span>
+              {waitingOverdue && <span className="text-red-400 flex-shrink-0">🔴</span>}
+              {task.waiting_deadline && (
+                <span className={`text-xs flex-shrink-0 ${waitingOverdue ? 'text-red-400' : 'text-gray-400'}`}>
+                  📅{formatDate(task.waiting_deadline)}
+                </span>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowEdit(true); }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="bg-slate-700 hover:bg-slate-600 p-1.5 rounded text-xs flex-shrink-0"
+              >
+                ✏️
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onUpdate(task.id, { status: 'todo' }); }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="bg-slate-700 hover:bg-slate-600 p-1.5 rounded text-xs flex-shrink-0"
+                title="未着手に戻す"
+              >
+                ↩️
+              </button>
+            </div>
+          </div>
+
+          {showEdit && (
+            <EditModal
+              task={task}
+              editData={editData}
+              setEditData={setEditData}
+              handleSave={handleSave}
+              onDelete={onDelete}
+              setShowEdit={setShowEdit}
+              setShowSplit={setShowSplit}
+              statusOptions={statusOptions}
+            />
+          )}
+          {showSplit && <SplitModal task={task} onSplit={onSplit} setShowSplit={setShowSplit} />}
+        </>
+      )
+    }
+
+    // 通常表示
     return (
       <>
-        <div className={`bg-slate-800 rounded-lg p-3 border-l-4 ${tierColors[task.tier || 2]} ${waitingOverdue ? 'ring-1 ring-red-500/50' : ''}`}>
+        <div
+          ref={setNodeRef}
+          style={style}
+          className={`bg-slate-800 rounded-lg p-3 border-l-4 ${tierColors[task.tier || 2]} ${waitingOverdue ? 'ring-1 ring-red-500/50' : ''} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+          {...attributes}
+          {...listeners}
+        >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <span className={`${tierBadgeColors[task.tier || 2]} text-white text-xs px-1.5 py-0.5 rounded flex-shrink-0`}>
@@ -123,13 +187,15 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
             </div>
             <div className="flex items-center gap-1 flex-shrink-0 ml-2">
               <button
-                onClick={() => setShowEdit(true)}
+                onClick={(e) => { e.stopPropagation(); setShowEdit(true); }}
+                onPointerDown={(e) => e.stopPropagation()}
                 className="text-sm bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded"
               >
                 ✏️
               </button>
               <button
-                onClick={() => onUpdate(task.id, { status: 'todo' })}
+                onClick={(e) => { e.stopPropagation(); onUpdate(task.id, { status: 'todo' }); }}
+                onPointerDown={(e) => e.stopPropagation()}
                 className="text-sm bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded"
                 title="未着手に戻す"
               >
@@ -185,7 +251,7 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
         <div
           ref={setNodeRef}
           style={style}
-          className={`bg-slate-800 rounded-lg px-3 py-2 border-l-4 ${tierColors[task.tier || 2]} cursor-grab active:cursor-grabbing`}
+          className={`bg-slate-800 rounded-lg px-3 py-2 border-l-4 ${tierColors[task.tier || 2]} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
           {...attributes}
           {...listeners}
         >
@@ -251,7 +317,7 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
       <div
         ref={setNodeRef}
         style={style}
-        className={`bg-slate-800 rounded-lg p-4 border-l-4 ${tierColors[task.tier || 2]} cursor-grab active:cursor-grabbing`}
+        className={`bg-slate-800 rounded-lg p-4 border-l-4 ${tierColors[task.tier || 2]} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
         {...attributes}
         {...listeners}
       >

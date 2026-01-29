@@ -149,24 +149,67 @@ export default function Home() {
     }
   }
 
-  // ドラッグ&ドロップ
-  const handleDragEnd = async (event: any) => {
+  // ドラッグ&ドロップ（アクティブタスク用）
+  const handleDragEndActive = async (event: any) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const oldIndex = tasks.findIndex(t => t.id === active.id)
-    const newIndex = tasks.findIndex(t => t.id === over.id)
-    const newTasks = arrayMove(tasks, oldIndex, newIndex)
+    const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'waiting')
+    const oldIndex = activeTasks.findIndex(t => t.id === active.id)
+    const newIndex = activeTasks.findIndex(t => t.id === over.id)
+    
+    if (oldIndex === -1 || newIndex === -1) return
+    
+    const newActiveTasks = arrayMove(activeTasks, oldIndex, newIndex)
 
-    const updates = newTasks.map((task, index) => ({
+    // sort_orderを更新
+    const updates = newActiveTasks.map((task, index) => ({
       id: task.id,
       sort_order: index
     }))
+
+    // 全タスクの中でアクティブタスクのみ更新
+    const newTasks = tasks.map(t => {
+      const update = updates.find(u => u.id === t.id)
+      return update ? { ...t, sort_order: update.sort_order } : t
+    })
 
     setTasks(newTasks)
 
     for (const u of updates) {
       await supabase.from('tasks').update({ sort_order: u.sort_order }).eq('id', u.id)
+    }
+  }
+
+  // ドラッグ&ドロップ（待ちタスク用）
+  const handleDragEndWaiting = async (event: any) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const waitingTasks = tasks.filter(t => t.status === 'waiting')
+    const oldIndex = waitingTasks.findIndex(t => t.id === active.id)
+    const newIndex = waitingTasks.findIndex(t => t.id === over.id)
+    
+    if (oldIndex === -1 || newIndex === -1) return
+    
+    const newWaitingTasks = arrayMove(waitingTasks, oldIndex, newIndex)
+
+    // waiting_sort_orderを更新
+    const updates = newWaitingTasks.map((task, index) => ({
+      id: task.id,
+      waiting_sort_order: index
+    }))
+
+    // 全タスクの中で待ちタスクのみ更新
+    const newTasks = tasks.map(t => {
+      const update = updates.find(u => u.id === t.id)
+      return update ? { ...t, waiting_sort_order: update.waiting_sort_order } : t
+    })
+
+    setTasks(newTasks)
+
+    for (const u of updates) {
+      await supabase.from('tasks').update({ waiting_sort_order: u.waiting_sort_order }).eq('id', u.id)
     }
   }
 
@@ -184,6 +227,19 @@ export default function Home() {
   const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'waiting')
   const waitingTasks = tasks.filter(t => t.status === 'waiting')
   const doneTasks = tasks.filter(t => t.status === 'done')
+
+  // 待ちタスクを返事期限順にソート（手動順がある場合はそちらを優先）
+  const sortedWaitingTasks = [...waitingTasks].sort((a, b) => {
+    // waiting_sort_orderがある場合はそれを優先
+    if (a.waiting_sort_order !== null && a.waiting_sort_order !== undefined &&
+        b.waiting_sort_order !== null && b.waiting_sort_order !== undefined) {
+      return a.waiting_sort_order - b.waiting_sort_order
+    }
+    // それ以外は返事期限順
+    const dateA = a.waiting_deadline || '9999-12-31'
+    const dateB = b.waiting_deadline || '9999-12-31'
+    return dateA > dateB ? 1 : -1
+  })
 
   // 完了タスクを新しい順にソート
   const sortedDoneTasks = [...doneTasks].sort((a, b) => {
@@ -250,7 +306,7 @@ export default function Home() {
                 </span>
               </h2>
 
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndActive}>
                 <SortableContext items={sortedActiveTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
                   <div className={isCompact ? "space-y-1" : "space-y-3"}>
                     {sortedActiveTasks.map(task => (
@@ -261,6 +317,7 @@ export default function Home() {
                         onUpdate={updateTask}
                         onDelete={deleteTask}
                         onSplit={splitTask}
+                        draggable={true}
                       />
                     ))}
                   </div>
@@ -283,24 +340,29 @@ export default function Home() {
                 </span>
               </h2>
 
-              <div className={isCompact ? "space-y-1 mb-6" : "space-y-2 mb-6"}>
-                {waitingTasks.map(task => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    compact={isCompact}
-                    onUpdate={updateTask}
-                    onDelete={deleteTask}
-                    onSplit={splitTask}
-                    showWaitingDetails={!isCompact}
-                  />
-                ))}
-                {waitingTasks.length === 0 && (
-                  <div className="text-center py-8 text-gray-400 bg-slate-800/50 rounded-lg">
-                    👍 待ちタスクなし
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEndWaiting}>
+                <SortableContext items={sortedWaitingTasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+                  <div className={isCompact ? "space-y-1 mb-6" : "space-y-2 mb-6"}>
+                    {sortedWaitingTasks.map(task => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        compact={isCompact}
+                        onUpdate={updateTask}
+                        onDelete={deleteTask}
+                        onSplit={splitTask}
+                        showWaitingDetails={!isCompact}
+                        draggable={true}
+                      />
+                    ))}
+                    {waitingTasks.length === 0 && (
+                      <div className="text-center py-8 text-gray-400 bg-slate-800/50 rounded-lg">
+                        👍 待ちタスクなし
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </SortableContext>
+              </DndContext>
 
               {sortedDoneTasks.length > 0 && (
                 <>
