@@ -4,6 +4,17 @@ import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
+const dayLabels = ['日', '月', '火', '水', '木', '金', '土']
+
+const getRecurrenceLabel = (type, day) => {
+  if (!type) return null
+  if (type === 'daily') return '毎日'
+  if (type === 'weekly') return `毎週${dayLabels[day]}`
+  if (type === 'biweekly') return `隔週${dayLabels[day]}`
+  if (type === 'monthly') return `毎月${day}日`
+  return null
+}
+
 export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, showWaitingDetails, showRestoreButton, draggable }) {
   const [showEdit, setShowEdit] = useState(false)
   const [showSplit, setShowSplit] = useState(false)
@@ -70,6 +81,8 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
     setShowEdit(false)
   }
 
+  const recurrenceLabel = getRecurrenceLabel(task.recurrence_type, task.recurrence_day)
+
   // 完了タスクの表示
   if (task.status === 'done') {
     return (
@@ -126,6 +139,9 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
                 T{task.tier || 2}
               </span>
               <span className="font-medium flex-1 truncate">{task.title}</span>
+              {recurrenceLabel && (
+                <span className="text-blue-400 text-xs flex-shrink-0">🔄</span>
+              )}
               {waitingOverdue && <span className="text-red-400 flex-shrink-0">🔴</span>}
               {task.waiting_deadline && (
                 <span className={`text-xs flex-shrink-0 ${waitingOverdue ? 'text-red-400' : 'text-gray-400'}`}>
@@ -183,6 +199,9 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
                 T{task.tier || 2}
               </span>
               <span className="truncate">{task.title}</span>
+              {recurrenceLabel && (
+                <span className="text-blue-400 text-xs flex-shrink-0">🔄{recurrenceLabel}</span>
+              )}
               {waitingOverdue && <span className="text-red-400 flex-shrink-0">🔴</span>}
             </div>
             <div className="flex items-center gap-1 flex-shrink-0 ml-2">
@@ -262,6 +281,10 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
             
             <span className="font-medium flex-1 truncate">{task.title}</span>
             
+            {recurrenceLabel && (
+              <span className="text-blue-400 text-xs flex-shrink-0">🔄</span>
+            )}
+            
             <div className="flex items-center gap-2 text-xs flex-shrink-0">
               {task.deadline && (
                 <span className={isOverdue(task.deadline) ? 'text-red-400' : 'text-yellow-400'}>
@@ -330,6 +353,11 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
               <span className="bg-slate-700 text-gray-300 text-xs px-2 py-0.5 rounded">
                 {statusLabels[task.status] || '未着手'}
               </span>
+              {recurrenceLabel && (
+                <span className="bg-blue-600/30 text-blue-400 text-xs px-2 py-0.5 rounded">
+                  🔄 {recurrenceLabel}
+                </span>
+              )}
             </div>
             <h3 className="font-bold text-lg mb-1">{task.title}</h3>
             {task.description && (
@@ -388,6 +416,26 @@ export default function TaskCard({ task, compact, onUpdate, onDelete, onSplit, s
 // 編集モーダル
 function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowEdit, setShowSplit, statusOptions }) {
   const isWaiting = editData.status === 'waiting'
+
+  const recurrenceOptions = [
+    { value: '', label: 'なし' },
+    { value: 'daily', label: '毎日' },
+    { value: 'weekly', label: '毎週' },
+    { value: 'biweekly', label: '隔週' },
+    { value: 'monthly', label: '毎月' },
+  ]
+
+  const handleRecurrenceChange = (type) => {
+    if (type === '') {
+      setEditData({ ...editData, recurrence_type: null, recurrence_day: null })
+    } else if (type === 'daily') {
+      setEditData({ ...editData, recurrence_type: type, recurrence_day: 0 })
+    } else if (type === 'weekly' || type === 'biweekly') {
+      setEditData({ ...editData, recurrence_type: type, recurrence_day: editData.recurrence_day || 1 })
+    } else if (type === 'monthly') {
+      setEditData({ ...editData, recurrence_type: type, recurrence_day: editData.recurrence_day || 1 })
+    }
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-20 overflow-y-auto" onClick={() => setShowEdit(false)}>
@@ -468,6 +516,69 @@ function EditModal({ task, editData, setEditData, handleSave, onDelete, setShowE
               </div>
             </div>
           )}
+
+          {/* 繰り返し設定 */}
+          <div className="border border-blue-500/30 rounded-lg p-4 bg-blue-500/5">
+            <div className="text-sm text-blue-400 mb-3">🔄 繰り返し</div>
+            <div className="space-y-3">
+              <div>
+                <select
+                  value={editData.recurrence_type || ''}
+                  onChange={(e) => handleRecurrenceChange(e.target.value)}
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2"
+                >
+                  {recurrenceOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 毎週・隔週の場合：曜日選択 */}
+              {(editData.recurrence_type === 'weekly' || editData.recurrence_type === 'biweekly') && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">曜日</label>
+                  <div className="flex gap-1">
+                    {['日', '月', '火', '水', '木', '金', '土'].map((day, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setEditData({ ...editData, recurrence_day: index })}
+                        className={`flex-1 py-2 rounded text-sm ${
+                          editData.recurrence_day === index
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-700 text-gray-400 hover:bg-slate-600'
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 毎月の場合：日付選択 */}
+              {editData.recurrence_type === 'monthly' && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">日付</label>
+                  <select
+                    value={editData.recurrence_day || 1}
+                    onChange={(e) => setEditData({ ...editData, recurrence_day: parseInt(e.target.value) })}
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2"
+                  >
+                    {[...Array(31)].map((_, i) => (
+                      <option key={i + 1} value={i + 1}>{i + 1}日</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {editData.recurrence_type && (
+                <div className="text-xs text-gray-400">
+                  ※ 完了時に次回タスクが自動生成されます
+                </div>
+              )}
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>

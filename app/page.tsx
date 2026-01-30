@@ -85,6 +85,35 @@ export default function Home() {
     await supabase.auth.signOut()
   }
 
+  // 次回日付を計算
+  const calculateNextDate = (recurrenceType: string, recurrenceDay: number) => {
+    const today = new Date()
+    let nextDate = new Date()
+
+    if (recurrenceType === 'daily') {
+      nextDate.setDate(today.getDate() + 1)
+    } else if (recurrenceType === 'weekly') {
+      const currentDay = today.getDay()
+      let daysUntil = recurrenceDay - currentDay
+      if (daysUntil <= 0) daysUntil += 7
+      nextDate.setDate(today.getDate() + daysUntil)
+    } else if (recurrenceType === 'biweekly') {
+      const currentDay = today.getDay()
+      let daysUntil = recurrenceDay - currentDay
+      if (daysUntil <= 0) daysUntil += 7
+      nextDate.setDate(today.getDate() + daysUntil + 7)
+    } else if (recurrenceType === 'monthly') {
+      nextDate.setMonth(today.getMonth() + 1)
+      nextDate.setDate(recurrenceDay)
+      // 日付が存在しない場合（例：31日がない月）は月末に調整
+      if (nextDate.getDate() !== recurrenceDay) {
+        nextDate.setDate(0)
+      }
+    }
+
+    return nextDate.toISOString().split('T')[0]
+  }
+
   // タスク追加
   const addTask = async (task: any) => {
     if (!user) return
@@ -98,13 +127,46 @@ export default function Home() {
 
   // タスク更新
   const updateTask = async (id: number, updates: any) => {
+    const currentTask = tasks.find(t => t.id === id)
+    
+    // 完了にする場合
     if (updates.status === 'done') {
       updates.completed_at = new Date().toISOString()
+      
+      // 繰り返しタスクの場合、次回タスクを生成
+      if (currentTask?.recurrence_type && currentTask?.recurrence_day !== null) {
+        const nextDate = calculateNextDate(currentTask.recurrence_type, currentTask.recurrence_day)
+        const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0
+        
+        const newTask = {
+          title: currentTask.title,
+          description: currentTask.description,
+          tier: currentTask.tier,
+          status: 'todo',
+          deadline: nextDate,
+          target_date: nextDate,
+          recurrence_type: currentTask.recurrence_type,
+          recurrence_day: currentTask.recurrence_day,
+          user_id: user.id,
+          sort_order: maxOrder + 1
+        }
+        
+        const { data: newTaskData } = await supabase
+          .from('tasks')
+          .insert([newTask])
+          .select()
+        
+        if (newTaskData) {
+          setTasks(prev => [...prev, newTaskData[0]])
+        }
+      }
     }
-    const currentTask = tasks.find(t => t.id === id)
+    
+    // 完了から別のステータスに戻す場合
     if (currentTask?.status === 'done' && updates.status && updates.status !== 'done') {
       updates.completed_at = null
     }
+    
     // 待ち以外に変更した場合、待ち関連フィールドをクリア
     if (updates.status && updates.status !== 'waiting') {
       updates.waiting_for = null
@@ -162,13 +224,11 @@ export default function Home() {
     
     const newActiveTasks = arrayMove(activeTasks, oldIndex, newIndex)
 
-    // sort_orderを更新
     const updates = newActiveTasks.map((task, index) => ({
       id: task.id,
       sort_order: index
     }))
 
-    // 全タスクの中でアクティブタスクのみ更新
     const newTasks = tasks.map(t => {
       const update = updates.find(u => u.id === t.id)
       return update ? { ...t, sort_order: update.sort_order } : t
@@ -194,13 +254,11 @@ export default function Home() {
     
     const newWaitingTasks = arrayMove(waitingTasks, oldIndex, newIndex)
 
-    // waiting_sort_orderを更新
     const updates = newWaitingTasks.map((task, index) => ({
       id: task.id,
       waiting_sort_order: index
     }))
 
-    // 全タスクの中で待ちタスクのみ更新
     const newTasks = tasks.map(t => {
       const update = updates.find(u => u.id === t.id)
       return update ? { ...t, waiting_sort_order: update.waiting_sort_order } : t
@@ -228,14 +286,12 @@ export default function Home() {
   const waitingTasks = tasks.filter(t => t.status === 'waiting')
   const doneTasks = tasks.filter(t => t.status === 'done')
 
-  // 待ちタスクを返事期限順にソート（手動順がある場合はそちらを優先）
+  // 待ちタスクを返事期限順にソート
   const sortedWaitingTasks = [...waitingTasks].sort((a, b) => {
-    // waiting_sort_orderがある場合はそれを優先
     if (a.waiting_sort_order !== null && a.waiting_sort_order !== undefined &&
         b.waiting_sort_order !== null && b.waiting_sort_order !== undefined) {
       return a.waiting_sort_order - b.waiting_sort_order
     }
-    // それ以外は返事期限順
     const dateA = a.waiting_deadline || '9999-12-31'
     const dateB = b.waiting_deadline || '9999-12-31'
     return dateA > dateB ? 1 : -1
@@ -287,7 +343,6 @@ export default function Home() {
       {/* メインコンテンツ */}
       <div className="pt-56 sm:pt-40 lg:pt-32 p-4">
         {isMatrix ? (
-          // マトリクス表示
           <MatrixView
             tasks={activeTasks}
             onUpdate={updateTask}
@@ -295,7 +350,6 @@ export default function Home() {
             onSplit={splitTask}
           />
         ) : (
-          // リスト表示（通常/コンパクト）
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* アクティブタスク */}
             <div className="lg:col-span-2">
