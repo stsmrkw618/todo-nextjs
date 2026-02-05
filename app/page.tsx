@@ -10,6 +10,13 @@ import Auth from '@/components/Auth'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 
+const statusLabels: any = {
+  'todo': '未着手',
+  'in_progress': '進行中',
+  'waiting': '待ち',
+  'done': '完了',
+}
+
 export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [authLoading, setAuthLoading] = useState(true)
@@ -23,7 +30,6 @@ export default function Home() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   )
 
-  // 認証状態の監視
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
@@ -37,19 +43,29 @@ export default function Home() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // データ読み込み
   useEffect(() => {
     if (user) {
       fetchData()
     }
   }, [user])
 
+  // ログ記録関数
+  const logAction = async (taskId: number | null, taskTitle: string, action: string, detail: string = '') => {
+    if (!user) return
+    await supabase.from('task_logs').insert([{
+      user_id: user.id,
+      task_id: taskId,
+      task_title: taskTitle,
+      action,
+      detail,
+    }])
+  }
+
   const fetchData = async () => {
     if (!user) return
     
     setLoading(true)
     
-    // 1週間以上前に完了したタスクを削除
     const oneWeekAgo = new Date()
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
     await supabase
@@ -80,12 +96,10 @@ export default function Home() {
     setLoading(false)
   }
 
-  // ログアウト
   const handleLogout = async () => {
     await supabase.auth.signOut()
   }
 
-  // 次回日付を計算
   const calculateNextDate = (recurrenceType: string, recurrenceDay: number) => {
     const today = new Date()
     let nextDate = new Date()
@@ -105,7 +119,6 @@ export default function Home() {
     } else if (recurrenceType === 'monthly') {
       nextDate.setMonth(today.getMonth() + 1)
       nextDate.setDate(recurrenceDay)
-      // 日付が存在しない場合（例：31日がない月）は月末に調整
       if (nextDate.getDate() !== recurrenceDay) {
         nextDate.setDate(0)
       }
@@ -114,7 +127,6 @@ export default function Home() {
     return nextDate.toISOString().split('T')[0]
   }
 
-  // タスク追加
   const addTask = async (task: any) => {
     if (!user) return
     const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0
@@ -122,19 +134,66 @@ export default function Home() {
       .from('tasks')
       .insert([{ ...task, user_id: user.id, sort_order: maxOrder + 1 }])
       .select()
-    if (data) setTasks([...tasks, data[0]])
+    if (data) {
+      setTasks([...tasks, data[0]])
+      await logAction(data[0].id, data[0].title, 'created')
+    }
   }
 
-  // タスク更新
   const updateTask = async (id: number, updates: any) => {
     const currentTask = tasks.find(t => t.id === id)
-    
-    // 完了にする場合
+    if (!currentTask) return
+
+    // ログ記録用の変更検出
+    const logs: { action: string, detail: string }[] = []
+
+    // ステータス変更
+    if (updates.status && updates.status !== currentTask.status) {
+      if (updates.status === 'done') {
+        logs.push({ action: 'completed', detail: '' })
+      } else if (updates.status === 'waiting') {
+        const waitingFor = updates.waiting_for || currentTask.waiting_for || ''
+        logs.push({ action: 'status_change', detail: `${statusLabels[currentTask.status]} → 待ち${waitingFor ? `（${waitingFor}）` : ''}` })
+      } else {
+        logs.push({ action: 'status_change', detail: `${statusLabels[currentTask.status]} → ${statusLabels[updates.status]}` })
+      }
+    }
+
+    // DEAD変更
+    if (updates.deadline !== undefined && updates.deadline !== currentTask.deadline) {
+      const oldDate = currentTask.deadline ? new Date(currentTask.deadline).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) : 'なし'
+      const newDate = updates.deadline ? new Date(updates.deadline).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) : 'なし'
+      logs.push({ action: 'updated', detail: `DEAD: ${oldDate} → ${newDate}` })
+    }
+
+    // 目標日変更
+    if (updates.target_date !== undefined && updates.target_date !== currentTask.target_date) {
+      const oldDate = currentTask.target_date ? new Date(currentTask.target_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) : 'なし'
+      const newDate = updates.target_date ? new Date(updates.target_date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) : 'なし'
+      logs.push({ action: 'updated', detail: `目標日: ${oldDate} → ${newDate}` })
+    }
+
+    // Tier変更
+    if (updates.tier !== undefined && updates.tier !== currentTask.tier) {
+      logs.push({ action: 'updated', detail: `T${currentTask.tier || 2} → T${updates.tier}` })
+    }
+
+    // 詳細変更
+    if (updates.description !== undefined && updates.description !== currentTask.description) {
+      logs.push({ action: 'updated', detail: '詳細を更新' })
+    }
+
+    // タイトル変更
+    if (updates.title !== undefined && updates.title !== currentTask.title) {
+      logs.push({ action: 'updated', detail: `タイトル: ${currentTask.title} → ${updates.title}` })
+    }
+
+    // 完了処理
     if (updates.status === 'done') {
       updates.completed_at = new Date().toISOString()
       
-      // 繰り返しタスクの場合、次回タスクを生成
-      if (currentTask?.recurrence_type && currentTask?.recurrence_day !== null) {
+      // 繰り返しタスク
+      if (currentTask.recurrence_type && currentTask.recurrence_day !== null) {
         const nextDate = calculateNextDate(currentTask.recurrence_type, currentTask.recurrence_day)
         const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0
         
@@ -147,7 +206,7 @@ export default function Home() {
           target_date: nextDate,
           recurrence_type: currentTask.recurrence_type,
           recurrence_day: currentTask.recurrence_day,
-          user_id: user.id,
+          user_id: user!.id,
           sort_order: maxOrder + 1
         }
         
@@ -158,16 +217,15 @@ export default function Home() {
         
         if (newTaskData) {
           setTasks(prev => [...prev, newTaskData[0]])
+          await logAction(newTaskData[0].id, newTaskData[0].title, 'recurrence', `次回: ${nextDate}`)
         }
       }
     }
-    
-    // 完了から別のステータスに戻す場合
-    if (currentTask?.status === 'done' && updates.status && updates.status !== 'done') {
+
+    if (currentTask.status === 'done' && updates.status && updates.status !== 'done') {
       updates.completed_at = null
     }
-    
-    // 待ち以外に変更した場合、待ち関連フィールドをクリア
+
     if (updates.status && updates.status !== 'waiting') {
       updates.waiting_for = null
       updates.waiting_deadline = null
@@ -175,15 +233,22 @@ export default function Home() {
     
     await supabase.from('tasks').update(updates).eq('id', id)
     setTasks(tasks.map(t => t.id === id ? { ...t, ...updates } : t))
+
+    // ログを記録
+    for (const log of logs) {
+      await logAction(id, updates.title || currentTask.title, log.action, log.detail)
+    }
   }
 
-  // タスク削除
   const deleteTask = async (id: number) => {
+    const task = tasks.find(t => t.id === id)
     await supabase.from('tasks').delete().eq('id', id)
     setTasks(tasks.filter(t => t.id !== id))
+    if (task) {
+      await logAction(id, task.title, 'deleted')
+    }
   }
 
-  // タスク分割
   const splitTask = async (originalTask: any, childTitles: string[]) => {
     if (!user) return
     const maxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0
@@ -208,23 +273,23 @@ export default function Home() {
     if (data) {
       await supabase.from('tasks').delete().eq('id', originalTask.id)
       setTasks([...tasks.filter(t => t.id !== originalTask.id), ...data])
+      await logAction(originalTask.id, originalTask.title, 'split', `→ ${childTitles.join(', ')}`)
     }
   }
 
-  // ドラッグ&ドロップ（アクティブタスク用）
   const handleDragEndActive = async (event: any) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'waiting')
-    const oldIndex = activeTasks.findIndex(t => t.id === active.id)
-    const newIndex = activeTasks.findIndex(t => t.id === over.id)
+    const activeList = tasks.filter(t => t.status !== 'done' && t.status !== 'waiting')
+    const oldIndex = activeList.findIndex(t => t.id === active.id)
+    const newIndex = activeList.findIndex(t => t.id === over.id)
     
     if (oldIndex === -1 || newIndex === -1) return
     
-    const newActiveTasks = arrayMove(activeTasks, oldIndex, newIndex)
+    const newActiveList = arrayMove(activeList, oldIndex, newIndex)
 
-    const updates = newActiveTasks.map((task, index) => ({
+    const updates = newActiveList.map((task, index) => ({
       id: task.id,
       sort_order: index
     }))
@@ -241,20 +306,19 @@ export default function Home() {
     }
   }
 
-  // ドラッグ&ドロップ（待ちタスク用）
   const handleDragEndWaiting = async (event: any) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const waitingTasks = tasks.filter(t => t.status === 'waiting')
-    const oldIndex = waitingTasks.findIndex(t => t.id === active.id)
-    const newIndex = waitingTasks.findIndex(t => t.id === over.id)
+    const waitingList = tasks.filter(t => t.status === 'waiting')
+    const oldIndex = waitingList.findIndex(t => t.id === active.id)
+    const newIndex = waitingList.findIndex(t => t.id === over.id)
     
     if (oldIndex === -1 || newIndex === -1) return
     
-    const newWaitingTasks = arrayMove(waitingTasks, oldIndex, newIndex)
+    const newWaitingList = arrayMove(waitingList, oldIndex, newIndex)
 
-    const updates = newWaitingTasks.map((task, index) => ({
+    const updates = newWaitingList.map((task, index) => ({
       id: task.id,
       waiting_sort_order: index
     }))
@@ -271,22 +335,18 @@ export default function Home() {
     }
   }
 
-  // 認証ロード中
   if (authLoading) {
     return <div className="flex items-center justify-center h-screen">読み込み中...</div>
   }
 
-  // 未ログイン
   if (!user) {
     return <Auth />
   }
 
-  // タスクの分類
   const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'waiting')
   const waitingTasks = tasks.filter(t => t.status === 'waiting')
   const doneTasks = tasks.filter(t => t.status === 'done')
 
-  // 待ちタスクを返事期限順にソート
   const sortedWaitingTasks = [...waitingTasks].sort((a, b) => {
     if (a.waiting_sort_order !== null && a.waiting_sort_order !== undefined &&
         b.waiting_sort_order !== null && b.waiting_sort_order !== undefined) {
@@ -297,14 +357,12 @@ export default function Home() {
     return dateA > dateB ? 1 : -1
   })
 
-  // 完了タスクを新しい順にソート
   const sortedDoneTasks = [...doneTasks].sort((a, b) => {
     const dateA = a.completed_at ? new Date(a.completed_at).getTime() : 0
     const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0
     return dateB - dateA
   })
 
-  // ソート
   const sortTasks = (taskList: any[]) => {
     return [...taskList].sort((a, b) => {
       if (settings.sort_by === 'tier') return (a.tier || 2) - (b.tier || 2)
@@ -326,7 +384,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen">
-      {/* 固定ヘッダー */}
       <div className="fixed top-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-sm border-b border-slate-700 p-4">
         <Header
           topTask={topTask}
@@ -340,7 +397,6 @@ export default function Home() {
         />
       </div>
 
-      {/* メインコンテンツ */}
       <div className="pt-56 sm:pt-40 lg:pt-32 p-4">
         {isMatrix ? (
           <MatrixView
@@ -351,7 +407,6 @@ export default function Home() {
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* アクティブタスク */}
             <div className="lg:col-span-2">
               <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
                 アクティブ
@@ -385,7 +440,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* 待ち & 完了 */}
             <div>
               <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
                 👤 待ちタスク

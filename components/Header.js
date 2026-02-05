@@ -1,11 +1,19 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
+import TaskDiary from '@/components/TaskDiary'
 
 export default function Header({ topTask, activeCount, waitingCount, settings, setSettings, onAddClick, user, onLogout }) {
   const [showSettings, setShowSettings] = useState(false)
+  const [showDiary, setShowDiary] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const fileInputRef = useRef(null)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const formatDate = (dateStr) => {
     if (!dateStr) return null
@@ -135,6 +143,15 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
           ＋ 追加
         </button>
 
+        {/* 日記ボタン */}
+        <button
+          onClick={() => setShowDiary(true)}
+          className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg transition-all"
+          title="タスク日記"
+        >
+          📖
+        </button>
+
         {/* 設定ボタン */}
         <button
           onClick={() => setShowSettings(true)}
@@ -144,10 +161,16 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
         </button>
       </div>
 
-      {/* 設定モーダル */}
-      {showSettings && (
-        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-20 overflow-y-auto" onClick={() => setShowSettings(false)}>
-          <div className="bg-slate-800 rounded-xl p-6 w-full max-w-md mb-10" onClick={(e) => e.stopPropagation()}>
+      {/* タスク日記モーダル（Portal経由でbody直下にレンダリング） */}
+      {mounted && showDiary && createPortal(
+        <TaskDiary user={user} onClose={() => setShowDiary(false)} />,
+        document.body
+      )}
+
+      {/* 設定モーダル（Portal経由でbody直下にレンダリング） */}
+      {mounted && showSettings && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-4" onClick={() => setShowSettings(false)}>
+          <div className="bg-slate-800 rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4">⚙️ 設定</h2>
 
             {/* ユーザー情報 */}
@@ -155,10 +178,10 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
               <div className="text-sm text-gray-400 mb-1">ログイン中</div>
               <div className="text-sm truncate">{user?.email}</div>
             </div>
-            
+
             <div className="mb-4">
               <label className="block text-sm text-gray-400 mb-2">🎭 アバター</label>
-              
+
               <div className="flex items-center gap-4 mb-3">
                 <div className="w-16 h-16 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center overflow-hidden border-2 border-violet-400">
                   {settings.avatar ? (
@@ -167,7 +190,7 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
                     <span className="text-2xl">📷</span>
                   )}
                 </div>
-                
+
                 {settings.avatar && (
                   <button
                     onClick={handleDeleteAvatar}
@@ -177,7 +200,7 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
                   </button>
                 )}
               </div>
-              
+
               <input
                 type="file"
                 ref={fileInputRef}
@@ -223,7 +246,8 @@ export default function Header({ topTask, activeCount, waitingCount, settings, s
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
