@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "TODO Dashboard",
   description: "タスク管理ダッシュボード",
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export default function RootLayout({
