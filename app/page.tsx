@@ -406,8 +406,8 @@ export default function Home() {
             onSplit={splitTask}
           />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="md:col-span-2">
               <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
                 アクティブ
                 <span className="bg-violet-500 text-white text-sm px-2 py-0.5 rounded-full">
